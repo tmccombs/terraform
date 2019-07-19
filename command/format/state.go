@@ -101,10 +101,21 @@ func formatStateModule(p blockBodyDiffPrinter, m *states.Module, schemas *terraf
 			addr := m.Resources[key].Addr
 
 			taintStr := ""
-			if v.Current.Status == 'T' {
+			if v.Current != nil && v.Current.Status == 'T' {
 				taintStr = " (tainted)"
 			}
+
+			if len(v.Deposed) > 0 {
+				taintStr += fmt.Sprintf(" (%d deposed)", len(v.Deposed))
+			}
+
 			p.buf.WriteString(fmt.Sprintf("# %s:%s\n", addr.Absolute(m.Addr).Instance(k), taintStr))
+
+			if v.Current == nil {
+				// this shouldn't happen, but there's nothing to do here so
+				// don't panic below.
+				continue
+			}
 
 			var schema *configschema.Block
 			provider := m.Resources[key].ProviderConfig.ProviderConfig.StringCompact()

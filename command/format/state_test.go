@@ -49,6 +49,22 @@ func TestState(t *testing.T) {
 		},
 		{
 			&StateOpts{
+				State:   deposedState(t),
+				Color:   disabledColorize,
+				Schemas: testSchemas(),
+			},
+			deposedNestedStateOutput,
+		},
+		{
+			&StateOpts{
+				State:   onlyDeposedState(t),
+				Color:   disabledColorize,
+				Schemas: testSchemas(),
+			},
+			onlyDeposedOutput,
+		},
+		{
+			&StateOpts{
 				State:   stateWithMoreOutputs(t),
 				Color:   disabledColorize,
 				Schemas: testSchemas(),
@@ -151,6 +167,17 @@ resource "test_resource" "baz" {
         value = "42"
     }
 }`
+
+const deposedNestedStateOutput = `# test_resource.baz[0]: (1 deposed)
+resource "test_resource" "baz" {
+    woozles = "confuzles"
+
+    nested {
+        value = "42"
+    }
+}`
+
+const onlyDeposedOutput = `# test_resource.baz[0]: (1 deposed)`
 
 const stateWithMoreOutputsOutput = `# test_resource.baz[0]:
 resource "test_resource" "baz" {
@@ -261,6 +288,56 @@ func nestedState(t *testing.T) *states.State {
 			Type: "test_resource",
 			Name: "baz",
 		}.Instance(addrs.IntKey(0)),
+		&states.ResourceInstanceObjectSrc{
+			Status:        states.ObjectReady,
+			SchemaVersion: 1,
+			AttrsJSON:     []byte(`{"woozles":"confuzles","nested": [{"value": "42"}]}`),
+		},
+		addrs.ProviderConfig{
+			Type: "test",
+		}.Absolute(addrs.RootModuleInstance),
+	)
+	return state
+}
+
+func deposedState(t *testing.T) *states.State {
+	state := nestedState(t)
+	rootModule := state.RootModule()
+	rootModule.SetResourceInstanceDeposed(
+		addrs.Resource{
+			Mode: addrs.ManagedResourceMode,
+			Type: "test_resource",
+			Name: "baz",
+		}.Instance(addrs.IntKey(0)),
+		states.NewDeposedKey(),
+		&states.ResourceInstanceObjectSrc{
+			Status:        states.ObjectReady,
+			SchemaVersion: 1,
+			AttrsJSON:     []byte(`{"woozles":"confuzles","nested": [{"value": "42"}]}`),
+		},
+		addrs.ProviderConfig{
+			Type: "test",
+		}.Absolute(addrs.RootModuleInstance),
+	)
+	return state
+}
+
+// replicate a corrupt resource where only a deposed exists
+func onlyDeposedState(t *testing.T) *states.State {
+	state := states.NewState()
+
+	rootModule := state.RootModule()
+	if rootModule == nil {
+		t.Errorf("root module is nil; want valid object")
+	}
+
+	rootModule.SetResourceInstanceDeposed(
+		addrs.Resource{
+			Mode: addrs.ManagedResourceMode,
+			Type: "test_resource",
+			Name: "baz",
+		}.Instance(addrs.IntKey(0)),
+		states.DeposedKey("1234"),
 		&states.ResourceInstanceObjectSrc{
 			Status:        states.ObjectReady,
 			SchemaVersion: 1,
