@@ -168,7 +168,16 @@ resource "test_resource" "baz" {
     }
 }`
 
-const deposedNestedStateOutput = `# test_resource.baz[0]: (1 deposed)
+const deposedNestedStateOutput = `# test_resource.baz[0]:
+resource "test_resource" "baz" {
+    woozles = "confuzles"
+
+    nested {
+        value = "42"
+    }
+}
+
+# test_resource.baz[0]: (deposed object 1234)
 resource "test_resource" "baz" {
     woozles = "confuzles"
 
@@ -177,7 +186,24 @@ resource "test_resource" "baz" {
     }
 }`
 
-const onlyDeposedOutput = `# test_resource.baz[0]: (1 deposed)`
+const onlyDeposedOutput = `# test_resource.baz[0]:
+# test_resource.baz[0]: (deposed object 1234)
+resource "test_resource" "baz" {
+    woozles = "confuzles"
+
+    nested {
+        value = "42"
+    }
+}
+
+# test_resource.baz[0]: (deposed object 5678)
+resource "test_resource" "baz" {
+    woozles = "confuzles"
+
+    nested {
+        value = "42"
+    }
+}`
 
 const stateWithMoreOutputsOutput = `# test_resource.baz[0]:
 resource "test_resource" "baz" {
@@ -309,7 +335,7 @@ func deposedState(t *testing.T) *states.State {
 			Type: "test_resource",
 			Name: "baz",
 		}.Instance(addrs.IntKey(0)),
-		states.NewDeposedKey(),
+		states.DeposedKey("1234"),
 		&states.ResourceInstanceObjectSrc{
 			Status:        states.ObjectReady,
 			SchemaVersion: 1,
@@ -338,6 +364,22 @@ func onlyDeposedState(t *testing.T) *states.State {
 			Name: "baz",
 		}.Instance(addrs.IntKey(0)),
 		states.DeposedKey("1234"),
+		&states.ResourceInstanceObjectSrc{
+			Status:        states.ObjectReady,
+			SchemaVersion: 1,
+			AttrsJSON:     []byte(`{"woozles":"confuzles","nested": [{"value": "42"}]}`),
+		},
+		addrs.ProviderConfig{
+			Type: "test",
+		}.Absolute(addrs.RootModuleInstance),
+	)
+	rootModule.SetResourceInstanceDeposed(
+		addrs.Resource{
+			Mode: addrs.ManagedResourceMode,
+			Type: "test_resource",
+			Name: "baz",
+		}.Instance(addrs.IntKey(0)),
+		states.DeposedKey("5678"),
 		&states.ResourceInstanceObjectSrc{
 			Status:        states.ObjectReady,
 			SchemaVersion: 1,
