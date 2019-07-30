@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -34,6 +35,7 @@ func (c *ImportCommand) Run(args []string) int {
 	}
 
 	var configPath string
+	var bulkPath string
 	args, err = c.Meta.process(args, true)
 	if err != nil {
 		return 1
@@ -49,6 +51,7 @@ func (c *ImportCommand) Run(args []string) int {
 	cmdFlags.BoolVar(&c.Meta.stateLock, "lock", true, "lock state")
 	cmdFlags.DurationVar(&c.Meta.stateLockTimeout, "lock-timeout", 0, "lock timeout")
 	cmdFlags.BoolVar(&c.Meta.allowMissingConfig, "allow-missing-config", false, "allow missing config")
+	cmdFlags.StringVar(&bulkPath, "bulk", "", "import resources in bulk from file")
 	cmdFlags.Usage = func() { c.Ui.Error(c.Help()) }
 	if err := cmdFlags.Parse(args); err != nil {
 		return 1
@@ -70,21 +73,36 @@ func (c *ImportCommand) Run(args []string) int {
 	}
 
 	args = cmdFlags.Args()
-	switch len(args) {
-	case 0:
-		return c.importBulk(configPath)
-	case 2:
-		return c.importSingle(configPath, args)
-	default:
-		c.Ui.Error("The import command expects either zero or two arguments.")
+	if bulkPath != "" {
+		if len(args) != 0 {
+			c.Ui.Error("The import command doesn't accept arguments when -bulk option is given")
+			cmdFlags.Usage()
+			return 1
+		}
+		return c.importBulk(configPath, bulkPath)
+	}
+	if len(args) != 2 {
+		c.Ui.Error("The import command expects two arguments.")
 		cmdFlags.Usage()
 		return 1
 	}
+	return c.importSingle(configPath, args)
 }
 
-func (c *ImportCommand) importBulk(configPath string) int {
+func (c *ImportCommand) importBulk(configPath string, importFile string) int {
+	var err error
+	var input io.Reader
+	if importFile == "-" {
+		input = os.Stdin
+	} else {
+		input, err = os.Open(importFile)
+		if err != nil {
+			c.Ui.Error(fmt.Sprintf("Unable to open file %s: %s", importFile, err))
+			return 1
+		}
+	}
 	var targets []*terraform.ImportTarget
-	scanner := bufio.NewScanner(os.Stdin)
+	scanner := bufio.NewScanner(input)
 	for scanner.Scan() {
 		line := strings.Trim(scanner.Text(), " ")
 		// This assumes that there aren't any spaces in the ID. But as far
@@ -100,7 +118,7 @@ func (c *ImportCommand) importBulk(configPath string) int {
 		}
 		targets = append(targets, target)
 	}
-	if err := scanner.Err(); err != nil {
+	if err = scanner.Err(); err != nil {
 		c.Ui.Error(fmt.Sprintf("Error reading input: %s.", err))
 		return 1
 	}
@@ -349,7 +367,7 @@ func (c *ImportCommand) getTarget(resource string, id string) (*terraform.Import
 
 func (c *ImportCommand) Help() string {
 	helpText := `
-Usage: terraform import [options] [ADDR ID]
+Usage: terraform import [options] ADDR ID
 
   Import existing infrastructure into your Terraform state.
 
@@ -392,6 +410,12 @@ Options:
                           via the input prompts or env vars.
 
   -allow-missing-config   Allow import when no resource configuration block exists.
+
+  -bulk=path              Import resources in bulk from a file. If this option is
+                          supplied, then ADDR and ID should not be given on the
+                          command line. Instead, the file at the path should
+                          contain lines with addresses and ids seperated by a
+                          space on each line.
 
   -input=true             Ask for input for variables if not directly set.
 
